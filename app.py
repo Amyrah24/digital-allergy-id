@@ -655,31 +655,13 @@ else:
         clean_patient_id = user_email.replace("-", "").strip()
         payload = f"{BASE_APP_URL}/?patient={clean_patient_id}"
 
-        qr_uri, png_bytes = "", None
-        if qrcode is None:
-            st.error(
-                "The QR library is missing. Run `pip install qrcode[pil]` and reload."
-            )
-        else:
-            qr = qrcode.QRCode(version=None, box_size=8, border=2)
-            qr.add_data(payload)
-            qr.make(fit=True)
-            buf = BytesIO()
-            qr.make_image(fill_color="black", back_color="white").save(
-                buf, format="PNG"
-            )
-            png_bytes = buf.getvalue()
-            qr_uri = (
-                "data:image/png;base64," + base64.b64encode(png_bytes).decode()
-            )
+        # Backup API URL if local qrcode library import fails
+        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={payload}"
 
-        chips = (
-            "".join(
-                f'<span class="badge {SEV_CLASS.get(a["severity"], "mild")}">{e(a["allergenName"])}</span>'
-                for a in allergies
-            )
-            or '<span class="al-note">No allergies recorded</span>'
-        )
+        chips = "".join(
+            f'<span class="badge {SEV_CLASS.get(a["severity"], "mild")}">{e(a["allergenName"])}</span>'
+            for a in allergies
+        ) or '<span class="al-note">No allergies recorded</span>'
 
         st.markdown(
             f"""<div class="id-card">
@@ -687,19 +669,13 @@ else:
               <div class="id-body">
                 <div class="id-who"><small>Patient ID</small><b>{e(user_email)}</b></div>
                 <div class="id-list">{chips}</div>
-                <div class="id-qr">{f'<img src="{qr_uri}" alt="QR code with verification URL">' if qr_uri else ''}</div>
+                <div class="id-qr"><img src="{qr_api_url}" alt="QR code with verification URL"></div>
               </div>
             </div>""",
             unsafe_allow_html=True,
         )
 
-        if png_bytes:
-            st.download_button(
-                "Download QR image",
-                png_bytes,
-                file_name="allergy_verified_qr.png",
-                mime="image/png",
-                use_container_width=True,
-            )
         with st.expander("Inspect Raw QR Code Payload"):
             st.code(payload, language="text")
+
+        
