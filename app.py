@@ -285,41 +285,231 @@ st.markdown(
 @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap');
 
 :root {
+  color-scheme: light;
   --bg: #F2F5F7; --surface: #FFFFFF; --ink: #12222D; --muted: #5B6B77; --line: #D9E1E6; --brand: #12222D;
-  --sev: #C4122F; --sev-bg: #FDECEF; --mod: #A85F00; --mod-bg: #FFF3DF; --mild: #2D7A5F; --mild-bg: #E6F4EE;
+  --brand-2: #23405A;
+  --sev: #C4122F; --sev-2: #E0334E; --sev-bg: #FDECEF;
+  --mod: #A85F00; --mod-bg: #FFF3DF;
+  --mild: #2D7A5F; --mild-bg: #E6F4EE;
+  --shadow-sm: 0 1px 2px rgba(18,34,45,.06), 0 2px 8px rgba(18,34,45,.05);
+  --shadow-md: 0 4px 12px rgba(18,34,45,.08), 0 12px 32px rgba(18,34,45,.08);
+  --radius: 16px;
 }
-.stApp { background: var(--bg); color: var(--ink); }
-.stApp, .stApp p, .stApp label, .stApp input, .stApp textarea, .stApp button, .stApp h1, .stApp h2, .stApp h3, .stApp li, .stApp div[data-baseweb] {
+
+/* ---------- Base ---------- */
+.stApp {
+  background:
+    radial-gradient(900px 400px at 100% -10%, rgba(196,18,47,.07), transparent 60%),
+    radial-gradient(800px 400px at -10% 0%, rgba(35,64,90,.09), transparent 60%),
+    var(--bg);
+  color: var(--ink);
+}
+.stApp, .stApp p, .stApp label, .stApp input, .stApp textarea, .stApp button,
+.stApp h1, .stApp h2, .stApp h3, .stApp li, .stApp div[data-baseweb] {
   font-family: 'Atkinson Hyperlegible', system-ui, sans-serif;
 }
+.stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp li, .stApp label { color: var(--ink); }
+.stApp h1 { font-weight: 700; letter-spacing: -.02em; }
+.stApp h2, .stApp h3 { font-weight: 700; letter-spacing: -.01em; }
 .block-container { padding-top: 1.6rem; padding-bottom: 4rem; max-width: 640px; }
 #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
 
-.stButton > button, .stFormSubmitButton > button, .stDownloadButton > button {
-  background: var(--brand); color: #fff; border: 0; border-radius: 10px; font-weight: 700; min-height: 2.75rem;
+/* ---------- Buttons ---------- */
+
+.stButton > button,
+.stFormSubmitButton > button,
+.stDownloadButton > button {
+  background: linear-gradient(135deg, var(--brand), var(--brand-2)) !important;
+  color: #FFFFFF !important;
+  border: 0 !important;
+  border-radius: 12px;
+  font-weight: 700;
+  min-height: 2.9rem;
+  padding: 0 1.2rem;
+  box-shadow: 0 2px 6px rgba(18,34,45,.25);
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
 }
-[data-testid="stForm"] { background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; padding: 1.2rem; }
 
-.al-card { background: var(--surface); border:1.5px solid var(--line); border-left-width: 7px; border-radius: 12px; padding: .9rem 1.1rem; margin-top: .8rem; }
-.al-card.sev  { border-left-color: var(--sev); }
-.al-card.mod  { border-left-color: var(--mod); }
-.al-card.mild { border-left-color: var(--mild); }
-.al-top { display:flex; justify-content:space-between; align-items:center; gap:.6rem; }
-.al-name { font-size:1.2rem; font-weight:700; }
-.badge { font-size:.85rem; font-weight:700; padding:.15rem .65rem; border-radius:999px; white-space:nowrap; }
-.badge.sev  { background:var(--sev-bg);  color:var(--sev); }
-.badge.mod  { background:var(--mod-bg);  color:var(--mod); }
-.badge.mild { background:var(--mild-bg); color:var(--mild); }
+/* Force the text inside Streamlit buttons to remain white */
+.stButton > button *,
+.stFormSubmitButton > button *,
+.stDownloadButton > button * {
+  color: #FFFFFF !important;
+}
 
-.sos { background: var(--sev); color:#fff; border-radius:14px; padding:1.1rem 1.3rem; margin: .4rem 0 1rem; }
-.id-card { background:var(--surface); border:2px solid var(--ink); border-radius:16px; overflow:hidden; }
-.id-band { background:var(--sev); color:#fff; padding:.7rem 1.2rem; font-weight:700; font-size:1.1rem; }
-.id-body { padding:1.1rem 1.2rem 1.3rem; display:grid; gap:1rem; }
-.id-who small { color:var(--muted); display:block; }
-.id-who b { font-size:1.15rem; word-break:break-all; }
-.id-list { display:flex; flex-wrap:wrap; gap:.4rem; }
-.id-qr { text-align:center; }
-.id-qr img { width: 220px; max-width: 100%; image-rendering: pixelated; }
+.stButton > button:hover,
+.stFormSubmitButton > button:hover,
+.stDownloadButton > button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+  box-shadow: 0 6px 16px rgba(18,34,45,.28);
+  color: #FFFFFF !important;
+}
+
+.stButton > button:active,
+.stFormSubmitButton > button:active,
+.stDownloadButton > button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(18,34,45,.3);
+}
+
+.stButton > button:focus-visible,
+.stFormSubmitButton > button:focus-visible,
+.stDownloadButton > button:focus-visible {
+  outline: 3px solid #7FB2E5;
+  outline-offset: 2px;
+}
+
+/* Disabled buttons */
+.stButton > button:disabled,
+.stFormSubmitButton > button:disabled,
+.stDownloadButton > button:disabled {
+  background: linear-gradient(135deg, #23405A, #2D526E) !important;
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+.stButton > button:disabled *,
+.stFormSubmitButton > button:disabled *,
+.stDownloadButton > button:disabled * {
+  color: #FFFFFF !important;
+}
+
+/* ---------- Form + inputs ---------- */
+
+[data-testid="stForm"] {
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.4rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.stApp label {
+  font-weight: 700;
+}
+
+/* Input and textarea */
+.stApp input,
+.stApp textarea {
+  border: 1.5px solid #C9D2D8 !important;
+    border-radius: 10px !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 1px 3px rgba(18, 34, 45, 0.06) !important;
+}
+
+/* Permanent soft grey border */
+.stApp div[data-baseweb="input"],
+.stApp div[data-baseweb="textarea"] {
+  background: #FFFFFF !important;
+  border: 1.5px solid #6B7C88 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  transition: border-color .15s ease;
+}
+
+/* Dropdown/select */
+.stApp div[data-baseweb="select"] > div {
+  background: #FFFFFF !important;
+  border: 1.5px solid #C9D2D8 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+/* When clicked: remain grey, only slightly darker */
+.stApp div[data-baseweb="input"]:focus-within,
+.stApp div[data-baseweb="textarea"]:focus-within,
+.stApp div[data-baseweb="select"] > div:focus-within {
+  border-color: #AEBBC4 !important;
+  box-shadow: none !important;
+}
+
+/* Placeholder */
+.stApp input::placeholder,
+.stApp textarea::placeholder {
+  color: #6B7C88 !important;
+  opacity: 1;
+}
+
+/* ---------- Allergy cards ---------- */
+.al-card {
+  position: relative; background: var(--surface);
+  border: 1.5px solid var(--line); border-left-width: 7px; border-radius: 14px;
+  padding: 1rem 1.2rem; margin-top: .8rem; box-shadow: var(--shadow-sm);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.al-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.al-card.sev  { border-left-color: var(--sev);  background: linear-gradient(90deg, var(--sev-bg) 0%, var(--surface) 38%); }
+.al-card.mod  { border-left-color: var(--mod);  background: linear-gradient(90deg, var(--mod-bg) 0%, var(--surface) 38%); }
+.al-card.mild { border-left-color: var(--mild); background: linear-gradient(90deg, var(--mild-bg) 0%, var(--surface) 38%); }
+.al-top { display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
+.al-name { font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; }
+
+/* ---------- Badges (status dot so meaning isn't color-only) ---------- */
+.badge {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .85rem; font-weight: 700; padding: .2rem .75rem; border-radius: 999px; white-space: nowrap;
+}
+.badge::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.badge.sev  { background: var(--sev-bg);  color: var(--sev); }
+.badge.mod  { background: var(--mod-bg);  color: var(--mod); }
+.badge.mild { background: var(--mild-bg); color: var(--mild); }
+
+/* ---------- SOS banner ---------- */
+.sos {
+  position: relative; overflow: hidden; color: #fff;
+  background: linear-gradient(135deg, var(--sev), var(--sev-2));
+  border-radius: var(--radius); padding: 1.2rem 1.4rem; margin: .4rem 0 1rem;
+  box-shadow: 0 8px 24px rgba(196,18,47,.35);
+}
+.sos, .sos * { color: #fff; }
+.sos::after {
+  content: ""; position: absolute; right: -40px; top: -40px; width: 140px; height: 140px;
+  border-radius: 50%; background: rgba(255,255,255,.12);
+  animation: sos-pulse 2.4s ease-out infinite;
+}
+@keyframes sos-pulse {
+  0%   { transform: scale(.8); opacity: .8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* ---------- Medical ID card ---------- */
+.id-card {
+  background: var(--surface); border: 2px solid var(--ink);
+  border-radius: 18px; overflow: hidden; box-shadow: var(--shadow-md);
+}
+.id-band {
+  background: linear-gradient(135deg, var(--sev), var(--sev-2)); color: #fff;
+  padding: .8rem 1.2rem; font-weight: 700; font-size: 1.1rem; letter-spacing: .02em;
+  display: flex; align-items: center; gap: .6rem;
+}
+.id-body { padding: 1.2rem 1.3rem 1.4rem; display: grid; gap: 1.1rem; }
+.id-who small {
+  color: var(--muted); display: block; font-size: .75rem;
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: .15rem;
+}
+.id-who b { font-size: 1.2rem; word-break: break-all; }
+.id-list { display: flex; flex-wrap: wrap; gap: .45rem; }
+.id-list > * {
+  background: var(--sev-bg); color: var(--sev); font-weight: 700;
+  padding: .25rem .7rem; border-radius: 999px; font-size: .9rem;
+}
+.id-qr { text-align: center; padding-top: 1rem; border-top: 1.5px dashed var(--line); }
+.id-qr img {
+  width: 220px; max-width: 100%; image-rendering: pixelated;
+  padding: .6rem; background: #fff; border: 1.5px solid var(--line); border-radius: 14px;
+}
+
+/* ---------- Accessibility + print ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .sos::after { animation: none; }
+  .al-card, .stButton > button { transition: none; }
+}
+@media print {
+  .stApp { background: #fff; }
+  .id-card { box-shadow: none; break-inside: avoid; }
+  .stButton, .stDownloadButton, [data-testid="stForm"] { display: none; }
+}
 </style>
 """,
     unsafe_allow_html=True,
