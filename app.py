@@ -771,74 +771,49 @@ if st.session_state.get("flash"):
     st.toast(st.session_state.pop("flash"), icon="✅")
 
 # ---------------------------------------------------------
-# PUBLIC VERIFICATION VIEWER (SCANNED QR LANDING PAGE)
+# PUBLIC VERIFICATION VIEWER (SCANNED QR & PUBLIC DOC LANDING)
 # ---------------------------------------------------------
 query_params = st.query_params
-if "patient" in query_params:
-    patient_param = query_params["patient"]
-    p_email, p_allergies, p_meds = get_user_by_email_or_ic(patient_param)
+
+# Public Document Handler
+if "file" in query_params:
+    requested_file = query_params["file"]
+    file_path = os.path.join(UPLOAD_DIR, requested_file)
+    abs_path = os.path.abspath(file_path)
 
     st.markdown(
-        brand_header("Public Medical Verification Viewer"),
+        brand_header("Public Medical Document Inspector"),
         unsafe_allow_html=True,
     )
     st.write("")
 
-    if p_email:
-        st.success(f"✅ Verified Patient Profile: **{p_email}**")
-        st.subheader("Registered & Verified Allergy Profile")
+    if os.path.exists(abs_path):
+        ext = abs_path.split(".")[-1].lower()
+        if ext in ["png", "jpg", "jpeg"]:
+            st.image(
+                abs_path,
+                caption=f"Verification Document ({requested_file})",
+                use_container_width=True,
+            )
+        elif ext == "pdf":
+            with open(abs_path, "rb") as f:
+                pdf_bytes = f.read()
+                pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
-        if not p_allergies:
-            st.info("No active allergy records found for this patient.")
-        else:
-            for a in p_allergies:
-                cls = SEV_CLASS.get(a["severity"], "mild")
-                st.markdown(
-                    f"""<div class="al-card {cls}">
-                      <div class="al-top"><span class="al-name">{e(a['allergenName'])}</span>
-                      <span class="badge {cls}">{SEV_SHORT.get(a['severity'], a['severity'])}</span></div>
-                      {f'<div class="al-rx">{e(a["reactionType"])}</div>' if a['reactionType'] else ''}
-                      {f'<div class="al-note">{e(a["notes"])}</div>' if a['notes'] else ''}
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
-
-                if a["docPath"] and os.path.exists(a["docPath"]):
-                    ext = a["docPath"].split(".")[-1].lower()
-                    with st.expander(
-                        f"📄 View Doctor's Verification ({a['allergenName']})"
-                    ):
-                        if ext in ["png", "jpg", "jpeg"]:
-                            st.image(
-                                a["docPath"],
-                                caption=f"Verification for {a['allergenName']}",
-                                use_container_width=True,
-                            )
-                        elif ext == "pdf":
-                            with open(a["docPath"], "rb") as f:
-                                pdf_base64 = base64.b64encode(f.read()).decode(
-                                    "utf-8"
-                                )
-                            pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="450px" type="application/pdf"></iframe>'
-                            components.html(pdf_display, height=460)
-                        else:
-                            with open(a["docPath"], "r") as f:
-                                st.info(f.read())
-
-        # NEW: medication history for pharmacists / first responders
-        st.subheader("Medication History")
-        p_warnings = analyze_medication_allergy_relationship(p_meds, p_allergies)
-        for w in p_warnings:
-            st.markdown(relationship_html(w), unsafe_allow_html=True)
-        if not p_meds:
-            st.info("No medication history recorded for this patient.")
-        else:
-            for m in p_meds:
-                st.markdown(med_card_html(m), unsafe_allow_html=True)
+            pdf_html = f"""
+            <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{pdf_b64}" 
+                    width="100%" height="550px" style="border:none;">
+            </iframe>
+            """
+            components.html(pdf_html, height=560)
+            st.download_button(
+                "📥 Download Document PDF",
+                data=pdf_bytes,
+                file_name=requested_file,
+                mime="application/pdf",
+            )
     else:
-        st.error(
-            f"❌ Patient record not found for query: `{html.escape(patient_param)}`"
-        )
+        st.error(f"❌ Requested document (`{requested_file}`) was not found on the server.")
 
     st.divider()
     if st.button("← Back to Sign In Portal", use_container_width=True):
@@ -923,7 +898,7 @@ else:
     ["My allergies", "Medication history", "Add allergy", "Emergency card"]
     )
 
-    # ---- My allergies ----
+# ---- My allergies ----
     with tab_dash:
         c_search, c_sos = st.columns([3, 2], vertical_alignment="bottom")
         with c_search:
@@ -982,33 +957,53 @@ else:
                     unsafe_allow_html=True,
                 )
 
-                if a["docPath"] and os.path.exists(a["docPath"]):
-                    ext = a["docPath"].split(".")[-1].lower()
+                if a["docPath"]:
+                    abs_doc_path = os.path.abspath(a["docPath"])
 
-                    with st.expander("📄 View Attached Verification Document"):
-                        if ext in ["png", "jpg", "jpeg"]:
-                            st.image(
-                                a["docPath"],
-                                caption=f"Doctor Verification for {a['allergenName']}",
-                                use_container_width=True,
-                            )
-                        elif ext == "pdf":
-                            with open(a["docPath"], "rb") as f:
-                                pdf_base64 = base64.b64encode(f.read()).decode(
-                                    "utf-8"
+                    if os.path.exists(abs_doc_path):
+                        ext = abs_doc_path.split(".")[-1].lower()
+
+                        with st.expander(
+                            f"📄 View Doctor's Verification ({a['allergenName']})"
+                        ):
+                            if ext in ["png", "jpg", "jpeg"]:
+                                st.image(
+                                    abs_doc_path,
+                                    caption=f"Doctor Verification for {a['allergenName']}",
+                                    use_container_width=True,
                                 )
-                            pdf_display = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="450px" type="application/pdf"></iframe>'
-                            components.html(pdf_display, height=460)
-                        else:
-                            with open(a["docPath"], "r") as f:
-                                st.info(f.read())
+                            elif ext == "pdf":
+                                with open(abs_doc_path, "rb") as f:
+                                    pdf_bytes = f.read()
+                                    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
-                        if a["cloudDocUrl"]:
-                            st.caption(
-                                f"🌐 **Cloud Verification URL:** [{a['cloudDocUrl']}]({a['cloudDocUrl']})"
-                            )
-                else:
-                    st.caption("⚠️ Document file missing on disk")
+                                # Use Mozilla PDF.js viewer via iframe to bypass browser base64 PDF block
+                                pdf_display = f"""
+                                <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{pdf_base64}" 
+                                        width="100%" height="500px" style="border:none;">
+                                </iframe>
+                                """
+                                components.html(pdf_display, height=510)
+
+                                st.download_button(
+                                    label=f"📥 Download {a['allergenName']} PDF",
+                                    data=pdf_bytes,
+                                    file_name=f"Verification_{a['allergenName']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_pdf_{a['id']}",
+                                )
+                            else:
+                                with open(abs_doc_path, "r", errors="ignore") as f:
+                                    st.info(f.read())
+
+                            if a.get("cloudDocUrl"):
+                                st.caption(
+                                    f"🌐 **Cloud Verification URL:** [{a['cloudDocUrl']}]({a['cloudDocUrl']})"
+                                )
+                    else:
+                        st.caption(
+                            f"⚠️ Document file missing on disk (`{a['docPath']}`)"
+                        )
 
                 with st.popover("Remove record"):
                     st.write(
