@@ -5,6 +5,7 @@ import html
 import os
 import sqlite3
 from contextlib import closing
+from datetime import date
 from io import BytesIO
 
 import streamlit as st
@@ -29,10 +30,15 @@ SEV_CLASS = {"Mild": "mild", "Moderate": "mod", "Severe / Anaphylaxis": "sev"}
 SEV_RANK = {"Severe / Anaphylaxis": 0, "Moderate": 1, "Mild": 2}
 SEV_SHORT = {"Mild": "Mild", "Moderate": "Moderate", "Severe / Anaphylaxis": "Severe"}
 
+# Medication history constants
+MED_STATUSES = ["Active", "Completed", "Discontinued"]
+MED_STATUS_CLASS = {"Active": "mod", "Completed": "mild", "Discontinued": "sev"}
+NO_ALLERGY = "None"
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ---------------------------------------------------------
-# CLOUD STORAGE HELPER FUNCTION (Option 1)
+# CLOUD STORAGE HELPER FUNCTION
 # ---------------------------------------------------------
 BASE_APP_URL = "https://digital-allergy-id.streamlit.app"  # Your Streamlit cloud URL
 
@@ -93,6 +99,24 @@ def init_db():
                 doc_path TEXT NOT NULL,
                 cloud_doc_url TEXT,
                 FOREIGN KEY (user_id) REFERENCES users (id))"""
+        )
+        # NEW: medication history module
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS medication_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                medication_name TEXT NOT NULL,
+                dosage TEXT,
+                frequency TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                status TEXT,
+                reason TEXT,
+                related_allergy TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )"""
         )
 
 
@@ -176,6 +200,46 @@ def seed_sample_data():
         )
 
 
+def seed_sample_medications():
+    """Seed demo medication history. Runs separately from seed_sample_data()
+    so it also works on an existing database that already has users."""
+    with closing(db()) as conn, conn:
+        if conn.execute("SELECT COUNT(*) FROM medication_history").fetchone()[0]:
+            return
+        demo = conn.execute(
+            "SELECT id FROM users WHERE email = ?", ("990412-14-5231",)
+        ).fetchone()
+        if not demo:
+            return
+        uid = demo["id"]
+        rows = [
+            (
+                uid, "Amoxicillin", "500 mg", "3 times daily",
+                "2026-09-01", "2026-09-08", "Discontinued",
+                "Severe hives", "Penicillin",
+                "Prescribed by Hospital Seri Iskandar",
+            ),
+            (
+                uid, "Ibuprofen", "400 mg", "As needed",
+                "2026-05-10", "2026-05-12", "Discontinued",
+                "Skin rash", "Ibuprofen (NSAIDs)",
+                "Stopped after rash developed",
+            ),
+            (
+                uid, "Paracetamol", "500 mg", "Every 6 hours as needed",
+                "2026-10-01", "", "Active",
+                "", NO_ALLERGY, "Safe alternative for pain relief",
+            ),
+        ]
+        conn.executemany(
+            """INSERT INTO medication_history
+               (user_id, medication_name, dosage, frequency, start_date, end_date,
+                status, reason, related_allergy, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+
+
 def register_user(email, password):
     try:
         with closing(db()) as conn, conn:
@@ -224,7 +288,7 @@ def get_user_allergies(user_id):
 
 
 def get_user_by_email_or_ic(patient_query):
-    """Retrieve user details and allergies via scanned URL query parameter."""
+    """Retrieve user details, allergies and medications via scanned URL query parameter."""
     with closing(db()) as conn:
         # Search for exact or clean match
         row = conn.execute(
@@ -232,12 +296,13 @@ def get_user_by_email_or_ic(patient_query):
             (patient_query, patient_query),
         ).fetchone()
         if not row:
-            return None, []
+            return None, [], []
         user_id = row["id"]
         email = row["email"]
 
     allergies = get_user_allergies(user_id)
-    return email, allergies
+    medications = get_user_medications(user_id)
+    return email, allergies, medications
 
 
 def add_allergy_record(
@@ -269,8 +334,109 @@ def delete_allergy_record(record_id, user_id, doc_path):
             pass
 
 
+# ---------------------------------------------------------
+# MEDICATION HISTORY FUNCTIONS
+# ---------------------------------------------------------
+def add_medication_record(
+    user_id,
+    medication_name,
+    dosage,
+    frequency,
+    start_date,
+    end_date,
+    status,
+    reason,
+    related_allergy,
+    notes
+):
+    with closing(db()) as conn, conn:
+        conn.execute(
+            """INSERT INTO medication_history
+            (
+                user_id,
+                medication_name,
+                dosage,
+                frequency,
+                start_date,
+                end_date,
+                status,
+                reason,
+                related_allergy,
+                notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id,
+                medication_name,
+                dosage,
+                frequency,
+                start_date,
+                end_date,
+                status,
+                reason,
+                related_allergy,
+                notes
+            )
+        )
+
+def get_user_medications(user_id):
+    with closing(db()) as conn:
+        rows = conn.execute(
+            """SELECT
+                id,
+                medication_name,
+                dosage,
+                frequency,
+                start_date,
+                end_date,
+                status,
+                reason,
+                related_allergy,
+                notes
+            FROM medication_history
+            WHERE user_id = ?
+            ORDER BY start_date DESC""",
+            (user_id,)
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+def delete_medication_record(record_id, user_id):
+    with closing(db()) as conn, conn:
+        conn.execute(
+            "DELETE FROM medication_history WHERE id = ? AND user_id = ?",
+            (record_id, user_id),
+        )
+
+
+def analyze_medication_allergy_relationship(medications, allergies):
+    """Link each medication's stored `related_allergy` to the patient's allergy
+    records. This is a record-matching step only, NOT a clinical
+    cross-reactivity engine."""
+    by_name = {a["allergenName"].strip().lower(): a for a in allergies}
+    warnings = []
+    for med in medications:
+        related = (med.get("related_allergy") or "").strip()
+        if not related or related == NO_ALLERGY:
+            continue
+        match = by_name.get(related.lower())
+        if match:
+            warnings.append(
+                {
+                    "medication": med["medication_name"],
+                    "allergy": match["allergenName"],
+                    "severity": match["severity"],
+                    "reason": med["reason"] or "",
+                    "status": med["status"] or "Unknown",
+                }
+            )
+    warnings.sort(key=lambda w: SEV_RANK.get(w["severity"], 3))
+    return warnings
+
+
 init_db()
 seed_sample_data()
+seed_sample_medications()
 
 # ---------------------------------------------------------
 # STREAMLIT UI CONFIGURATION & STYLING
@@ -445,6 +611,25 @@ st.markdown(
 .al-top { display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
 .al-name { font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; }
 
+/* ---------- Medication rows ---------- */
+.med-row { display: flex; gap: .5rem; margin-top: .35rem; font-size: .95rem; }
+.med-row b { min-width: 7.5rem; color: var(--muted); font-weight: 700; }
+.med-row span { flex: 1; word-break: break-word; }
+
+/* ---------- Medication-allergy relationship ---------- */
+.rel-card {
+  background: var(--surface); border: 1.5px solid var(--sev);
+  border-radius: 14px; padding: 1rem 1.2rem; margin-top: .8rem;
+  box-shadow: var(--shadow-sm);
+}
+.rel-title { font-weight: 700; color: var(--sev); margin-bottom: .6rem; }
+.rel-chain { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.rel-step {
+  background: var(--bg); border: 1.5px solid var(--line); border-radius: 10px;
+  padding: .25rem .65rem; font-size: .9rem; font-weight: 700;
+}
+.rel-arrow { color: var(--muted); font-weight: 700; }
+
 /* ---------- Badges (status dot so meaning isn't color-only) ---------- */
 .badge {
   display: inline-flex; align-items: center; gap: .4rem;
@@ -533,6 +718,50 @@ def flash(msg):
     st.session_state["flash"] = msg
 
 
+def med_card_html(med):
+    """Render one medication history card."""
+    status = med["status"] or "Unknown"
+    cls = MED_STATUS_CLASS.get(status, "mild")
+    start = med["start_date"] or "-"
+    end = med["end_date"] or ("Ongoing" if status == "Active" else "-")
+
+    def row(label, value):
+        return f'<div class="med-row"><b>{label}</b><span>{e(value or "-")}</span></div>'
+
+    related = med["related_allergy"]
+    related = "" if related == NO_ALLERGY else related
+    return f"""<div class="al-card {cls}">
+      <div class="al-top">
+        <span class="al-name">{e(med["medication_name"])}</span>
+        <span class="badge {cls}">{e(status)}</span>
+      </div>
+      {row("Dosage", med["dosage"])}
+      {row("Frequency", med["frequency"])}
+      {row("Period", f"{start} → {end}")}
+      {row("Reason stopped", med["reason"])}
+      {row("Related allergy", related)}
+      {row("Notes", med["notes"])}
+    </div>"""
+
+
+def relationship_html(w):
+    """Render the Medication → Status → Reason → Allergy → Severity chain."""
+    steps = [
+        w["medication"],
+        w["status"],
+        w["reason"] or "No reason recorded",
+        f"{w['allergy']} allergy",
+        SEV_SHORT.get(w["severity"], w["severity"]),
+    ]
+    chain = '<span class="rel-arrow">→</span>'.join(
+        f'<span class="rel-step">{e(s)}</span>' for s in steps
+    )
+    return f"""<div class="rel-card">
+      <div class="rel-title">⚠️ Medication–Allergy Relationship Identified</div>
+      <div class="rel-chain">{chain}</div>
+    </div>"""
+
+
 # Initialize session state keys
 if "user" not in st.session_state:
     st.session_state.user = None
@@ -547,7 +776,7 @@ if st.session_state.get("flash"):
 query_params = st.query_params
 if "patient" in query_params:
     patient_param = query_params["patient"]
-    p_email, p_allergies = get_user_by_email_or_ic(patient_param)
+    p_email, p_allergies, p_meds = get_user_by_email_or_ic(patient_param)
 
     st.markdown(
         brand_header("Public Medical Verification Viewer"),
@@ -595,6 +824,17 @@ if "patient" in query_params:
                         else:
                             with open(a["docPath"], "r") as f:
                                 st.info(f.read())
+
+        # NEW: medication history for pharmacists / first responders
+        st.subheader("Medication History")
+        p_warnings = analyze_medication_allergy_relationship(p_meds, p_allergies)
+        for w in p_warnings:
+            st.markdown(relationship_html(w), unsafe_allow_html=True)
+        if not p_meds:
+            st.info("No medication history recorded for this patient.")
+        else:
+            for m in p_meds:
+                st.markdown(med_card_html(m), unsafe_allow_html=True)
     else:
         st.error(
             f"❌ Patient record not found for query: `{html.escape(patient_param)}`"
@@ -668,6 +908,7 @@ if st.session_state.user is None:
 else:
     user_id, user_email = st.session_state.user
     allergies = get_user_allergies(user_id)
+    medications = get_user_medications(user_id)
 
     head, out = st.columns([4, 1], vertical_alignment="center")
     with head:
@@ -678,8 +919,8 @@ else:
             st.session_state.sos = False
             st.rerun()
 
-    tab_dash, tab_add, tab_qr = st.tabs(
-        ["My allergies", "Add allergy", "Emergency card"]
+    tab_dash, tab_med, tab_add, tab_qr = st.tabs(
+    ["My allergies", "Medication history", "Add allergy", "Emergency card"]
     )
 
     # ---- My allergies ----
@@ -778,6 +1019,100 @@ else:
                         flash(f"Removed {a['allergenName']}")
                         st.rerun()
 
+# ---- Medication history ----
+    with tab_med:
+        st.subheader("Medication History")
+
+        medications = get_user_medications(user_id)
+
+        if not medications:
+            st.info("No medication history recorded yet.")
+        else:
+            for med in medications:
+                st.markdown(
+                    med_card_html(med),
+                    unsafe_allow_html=True
+                )
+
+        st.divider()
+
+        st.subheader("Add Medication Record")
+
+        with st.form("add_medication_form"):
+            medication_name = st.text_input(
+                "Medication name *",
+                placeholder="e.g. Amoxicillin"
+            )
+
+            dosage = st.text_input(
+                "Dosage",
+                placeholder="e.g. 500 mg"
+            )
+
+            frequency = st.text_input(
+                "Frequency",
+                placeholder="e.g. 3 times daily"
+            )
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                start_date = st.date_input("Start date")
+
+            with col2:
+                end_date = st.date_input("End date")
+
+            status = st.selectbox(
+                "Status",
+                MED_STATUSES
+            )
+
+            reason = st.text_input(
+                "Reason",
+                placeholder="e.g. Severe hives"
+            )
+
+            related_allergy = st.selectbox(
+                "Related allergy",
+                [NO_ALLERGY] + [
+                    a["allergenName"]
+                    for a in allergies
+                ]
+            )
+
+            notes = st.text_area(
+                "Notes",
+                placeholder="Additional information"
+            )
+
+            submitted = st.form_submit_button(
+                "Save Medication Record",
+                use_container_width=True
+            )
+
+            if submitted:
+                if not medication_name.strip():
+                    st.error("Please enter the medication name.")
+                else:
+                    add_medication_record(
+                        user_id,
+                        medication_name.strip(),
+                        dosage.strip(),
+                        frequency.strip(),
+                        str(start_date),
+                        str(end_date),
+                        status,
+                        reason.strip(),
+                        related_allergy,
+                        notes.strip()
+                    )
+
+                    flash(
+                        f"Saved medication record for {medication_name.strip()}"
+                    )
+
+                    st.rerun()
+
     # ---- Add allergy ----
     with tab_add:
         st.write(
@@ -867,5 +1202,3 @@ else:
 
         with st.expander("Inspect Raw QR Code Payload"):
             st.code(payload, language="text")
-
-        
