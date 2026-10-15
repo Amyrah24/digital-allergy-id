@@ -333,6 +333,16 @@ def delete_allergy_record(record_id, user_id, doc_path):
         except OSError:
             pass
 
+def update_medication_status(record_id, user_id, new_status, reason=""):
+    """Update the status and optional discontinuation reason of a medication record."""
+    with closing(db()) as conn, conn:
+        conn.execute(
+            """UPDATE medication_history 
+               SET status = ?, reason = ? 
+               WHERE id = ? AND user_id = ?""",
+            (new_status, reason, record_id, user_id),
+        )
+
 
 # ---------------------------------------------------------
 # MEDICATION HISTORY FUNCTIONS
@@ -895,10 +905,10 @@ else:
             st.rerun()
 
     tab_dash, tab_med, tab_add, tab_qr = st.tabs(
-    ["My allergies", "Medication history", "Add allergy", "Emergency card"]
+        ["My allergies", "Medication history", "Add allergy", "Emergency card"]
     )
 
-# ---- My allergies ----
+    # ---- My allergies ----
     with tab_dash:
         c_search, c_sos = st.columns([3, 2], vertical_alignment="bottom")
         with c_search:
@@ -937,13 +947,9 @@ else:
         ]
 
         if not allergies:
-            st.info(
-                "No allergies recorded yet. Open the Add allergy tab to add your first one."
-            )
+            st.info("No allergies recorded yet. Open the Add allergy tab to add your first one.")
         elif not shown:
-            st.info(
-                f'No allergies match "{search}". Clear the search to see all records.'
-            )
+            st.info(f'No allergies match "{search}". Clear the search to see all records.')
         else:
             for a in shown:
                 cls = SEV_CLASS.get(a["severity"], "mild")
@@ -959,13 +965,9 @@ else:
 
                 if a["docPath"]:
                     abs_doc_path = os.path.abspath(a["docPath"])
-
                     if os.path.exists(abs_doc_path):
                         ext = abs_doc_path.split(".")[-1].lower()
-
-                        with st.expander(
-                            f"📄 View Doctor's Verification ({a['allergenName']})"
-                        ):
+                        with st.expander(f"📄 View Doctor's Verification ({a['allergenName']})"):
                             if ext in ["png", "jpg", "jpeg"]:
                                 st.image(
                                     abs_doc_path,
@@ -975,16 +977,6 @@ else:
                             elif ext == "pdf":
                                 with open(abs_doc_path, "rb") as f:
                                     pdf_bytes = f.read()
-                                    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
-
-                                # Use Mozilla PDF.js viewer via iframe to bypass browser base64 PDF block
-                                pdf_display = f"""
-                                <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{pdf_base64}" 
-                                        width="100%" height="500px" style="border:none;">
-                                </iframe>
-                                """
-                                components.html(pdf_display, height=510)
-
                                 st.download_button(
                                     label=f"📥 Download {a['allergenName']} PDF",
                                     data=pdf_bytes,
@@ -995,97 +987,93 @@ else:
                             else:
                                 with open(abs_doc_path, "r", errors="ignore") as f:
                                     st.info(f.read())
-
-                            if a.get("cloudDocUrl"):
-                                st.caption(
-                                    f"🌐 **Cloud Verification URL:** [{a['cloudDocUrl']}]({a['cloudDocUrl']})"
-                                )
                     else:
-                        st.caption(
-                            f"⚠️ Document file missing on disk (`{a['docPath']}`)"
-                        )
+                        st.caption(f"⚠️ Document file missing on disk (`{a['docPath']}`)")
 
                 with st.popover("Remove record"):
-                    st.write(
-                        f"Remove **{a['allergenName']}** and its verification file?"
-                    )
+                    st.write(f"Remove **{a['allergenName']}** and its verification file?")
                     if st.button("Yes, remove", key=f"del_{a['id']}"):
                         delete_allergy_record(a["id"], user_id, a["docPath"])
                         flash(f"Removed {a['allergenName']}")
                         st.rerun()
 
-# ---- Medication history ----
+    # ---- Medication history ----
     with tab_med:
         st.subheader("Medication History")
 
-        medications = get_user_medications(user_id)
+        warnings = analyze_medication_allergy_relationship(medications, allergies)
+        for w in warnings:
+            st.markdown(relationship_html(w), unsafe_allow_html=True)
 
         if not medications:
             st.info("No medication history recorded yet.")
         else:
             for med in medications:
-                st.markdown(
-                    med_card_html(med),
-                    unsafe_allow_html=True
-                )
+                st.markdown(med_card_html(med), unsafe_allow_html=True)
+
+                c_edit, c_del = st.columns([3, 1])
+
+                with c_edit:
+                    with st.popover(f"✏️ Change status: {med['medication_name']}"):
+                        with st.form(f"edit_status_form_{med['id']}"):
+                            new_status = st.selectbox(
+                                "New Status",
+                                MED_STATUSES,
+                                index=MED_STATUSES.index(med["status"])
+                                if med["status"] in MED_STATUSES
+                                else 0,
+                                key=f"status_sel_{med['id']}",
+                            )
+                            new_reason = st.text_input(
+                                "Reason for change / discontinuation",
+                                value=med.get("reason", "") or "",
+                                placeholder="e.g. Completed full course / Severe rash developed",
+                                key=f"reason_in_{med['id']}",
+                            )
+                            if st.form_submit_button("Update Status", use_container_width=True):
+                                update_medication_status(
+                                    med["id"], user_id, new_status, new_reason.strip()
+                                )
+                                flash(f"Updated {med['medication_name']} to {new_status}")
+                                st.rerun()
+
+                with c_del:
+                    with st.popover("🗑️ Delete"):
+                        st.write(f"Remove **{med['medication_name']}** from history?")
+                        if st.button(
+                            "Yes, delete",
+                            key=f"del_med_btn_{med['id']}",
+                            use_container_width=True,
+                        ):
+                            delete_medication_record(med["id"], user_id)
+                            flash(f"Removed {med['medication_name']}")
+                            st.rerun()
+
+                st.write("")
 
         st.divider()
-
         st.subheader("Add Medication Record")
 
         with st.form("add_medication_form"):
-            medication_name = st.text_input(
-                "Medication name *",
-                placeholder="e.g. Amoxicillin"
-            )
-
-            dosage = st.text_input(
-                "Dosage",
-                placeholder="e.g. 500 mg"
-            )
-
-            frequency = st.text_input(
-                "Frequency",
-                placeholder="e.g. 3 times daily"
-            )
+            medication_name = st.text_input("Medication name *", placeholder="e.g. Amoxicillin")
+            dosage = st.text_input("Dosage", placeholder="e.g. 500 mg")
+            frequency = st.text_input("Frequency", placeholder="e.g. 3 times daily")
 
             col1, col2 = st.columns(2)
-
             with col1:
                 start_date = st.date_input("Start date")
-
             with col2:
                 end_date = st.date_input("End date")
 
-            status = st.selectbox(
-                "Status",
-                MED_STATUSES
-            )
-
-            reason = st.text_input(
-                "Reason",
-                placeholder="e.g. Severe hives"
-            )
-
+            status = st.selectbox("Status", MED_STATUSES)
+            reason = st.text_input("Reason", placeholder="e.g. Severe hives")
             related_allergy = st.selectbox(
                 "Related allergy",
-                [NO_ALLERGY] + [
-                    a["allergenName"]
-                    for a in allergies
-                ]
+                [NO_ALLERGY] + [a["allergenName"] for a in allergies],
             )
+            notes = st.text_area("Notes", placeholder="Additional information")
 
-            notes = st.text_area(
-                "Notes",
-                placeholder="Additional information"
-            )
-
-            submitted = st.form_submit_button(
-                "Save Medication Record",
-                use_container_width=True
-            )
-
-            if submitted:
+            if st.form_submit_button("Save Medication Record", use_container_width=True):
                 if not medication_name.strip():
                     st.error("Please enter the medication name.")
                 else:
@@ -1095,24 +1083,18 @@ else:
                         dosage.strip(),
                         frequency.strip(),
                         str(start_date),
-                        str(end_date),
+                        "" if status == "Active" else str(end_date),
                         status,
                         reason.strip(),
                         related_allergy,
-                        notes.strip()
+                        notes.strip(),
                     )
-
-                    flash(
-                        f"Saved medication record for {medication_name.strip()}"
-                    )
-
+                    flash(f"Saved medication record for {medication_name.strip()}")
                     st.rerun()
 
     # ---- Add allergy ----
     with tab_add:
-        st.write(
-            "⚠️ **Medical Verification Required:** Attach supporting document from a doctor."
-        )
+        st.write("⚠️ **Medical Verification Required:** Attach supporting document from a doctor.")
         with st.form("add_allergy_form", clear_on_submit=True):
             name = st.text_input(
                 "Allergen or drug name*", placeholder="Penicillin, aspirin, peanuts"
@@ -1121,44 +1103,35 @@ else:
                 "Reaction", placeholder="Hives, swelling, trouble breathing"
             )
             severity = st.radio("Severity", SEVERITIES, horizontal=True)
-            notes = st.text_area(
+            allergy_notes = st.text_area(
                 "Notes or hospital reference (optional)",
                 placeholder="Verified by Hospital Seri Iskandar",
             )
-
             uploaded_doc = st.file_uploader(
                 "Attach Doctor's Supporting Document (PDF, PNG, JPG)*",
                 type=["pdf", "png", "jpg", "jpeg"],
                 help="Attach proof or signature from a certified medical practitioner.",
             )
 
-            if st.form_submit_button(
-                "Save verified allergy", use_container_width=True
-            ):
+            if st.form_submit_button("Save verified allergy", use_container_width=True):
                 if not name.strip():
                     st.error("Enter the allergen or drug name.")
                 elif uploaded_doc is None:
-                    st.error(
-                        "❌ **Validation Error:** You must upload a supporting doctor's verification document."
-                    )
+                    st.error("❌ You must upload a supporting doctor's verification document.")
                 else:
                     f_ext = uploaded_doc.name.split(".")[-1]
                     saved_filename = f"user_{user_id}_{name.strip().replace(' ', '_')}.{f_ext}"
                     file_path = os.path.join(UPLOAD_DIR, saved_filename)
-
                     with open(file_path, "wb") as f:
                         f.write(uploaded_doc.getbuffer())
 
-                    cloud_url = upload_to_cloud_storage(
-                        file_path, saved_filename
-                    )
-
+                    cloud_url = upload_to_cloud_storage(file_path, saved_filename)
                     add_allergy_record(
                         user_id,
                         name.strip(),
                         reaction.strip(),
                         severity,
-                        notes.strip() or "Verified by Doctor",
+                        allergy_notes.strip() or "Verified by Doctor",
                         file_path,
                         cloud_url,
                     )
@@ -1168,14 +1141,12 @@ else:
     # ---- Emergency card ----
     with tab_qr:
         st.write(
-            "Show this card to a pharmacist or first responder. When scanned, it opens your verified profile directly."
+            "Show this card to a pharmacist or first responder. "
+            "When scanned, it opens your verified profile directly."
         )
 
-        # Clean NRIC / Patient ID for URL parameter
         clean_patient_id = user_email.replace("-", "").strip()
         payload = f"{BASE_APP_URL}/?patient={clean_patient_id}"
-
-        # Backup API URL if local qrcode library import fails
         qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={payload}"
 
         chips = "".join(
@@ -1185,12 +1156,12 @@ else:
 
         st.markdown(
             f"""<div class="id-card">
-              <div class="id-band">Medical alert: verified cloud allergies</div>
-              <div class="id-body">
+            <div class="id-band">Medical alert: verified cloud allergies</div>
+            <div class="id-body">
                 <div class="id-who"><small>Patient ID</small><b>{e(user_email)}</b></div>
                 <div class="id-list">{chips}</div>
                 <div class="id-qr"><img src="{qr_api_url}" alt="QR code with verification URL"></div>
-              </div>
+            </div>
             </div>""",
             unsafe_allow_html=True,
         )
