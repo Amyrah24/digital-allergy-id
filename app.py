@@ -1141,12 +1141,14 @@ else:
     # ---- Emergency card ----
     with tab_qr:
         st.write(
-            "Show this card to a pharmacist or first responder. "
-            "When scanned, it opens your verified profile directly."
+            "Show this card to a pharmacist or first responder. When scanned, it opens your verified profile directly."
         )
 
+        # Clean NRIC / Patient ID for URL parameter
         clean_patient_id = user_email.replace("-", "").strip()
         payload = f"{BASE_APP_URL}/?patient={clean_patient_id}"
+
+        # Backup API URL if local qrcode library import fails
         qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={payload}"
 
         chips = "".join(
@@ -1156,12 +1158,12 @@ else:
 
         st.markdown(
             f"""<div class="id-card">
-            <div class="id-band">Medical alert: verified cloud allergies</div>
-            <div class="id-body">
+              <div class="id-band">Medical alert: verified cloud allergies</div>
+              <div class="id-body">
                 <div class="id-who"><small>Patient ID</small><b>{e(user_email)}</b></div>
                 <div class="id-list">{chips}</div>
                 <div class="id-qr"><img src="{qr_api_url}" alt="QR code with verification URL"></div>
-            </div>
+              </div>
             </div>""",
             unsafe_allow_html=True,
         )
