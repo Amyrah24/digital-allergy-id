@@ -154,14 +154,22 @@ def seed_sample_data():
             )
             ids[email] = cur.lastrowid
 
-        demo_file = os.path.join(UPLOAD_DIR, "demo_verification.txt")
+        # FIX 1: Point directly under UPLOAD_DIR without repeating the folder name
+        demo_file = os.path.join(UPLOAD_DIR, "user_1_test_pdf.pdf")
         if not os.path.exists(demo_file):
-            with open(demo_file, "w") as f:
-                f.write(
-                    "Official Medical Verification Note - Record Verified by Certified Physician."
-                )
+            with open(demo_file, "wb") as f:
+                f.write(b"%PDF-1.4 Mock Verification Document")
 
-        demo_cloud_url = f"{BASE_APP_URL}/view_doc?file=demo_verification.txt"
+        demo_file_image = os.path.join(UPLOAD_DIR, "user_1_test_png.png")
+        if not os.path.exists(demo_file_image):
+            # FIX 2: Generate a real 1x1 pixel valid PNG byte structure
+            valid_png_bytes = (
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+                b"\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\rIDATx\x9cc`\x00\x02"
+                b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+            )
+            with open(demo_file_image, "wb") as f:
+                f.write(valid_png_bytes)
 
         rows = [
             (
@@ -171,7 +179,6 @@ def seed_sample_data():
                 "Severe / Anaphylaxis",
                 "MIMS cross-reactive: Amoxicillin",
                 demo_file,
-                demo_cloud_url,
             ),
             (
                 "990412-14-5231",
@@ -179,8 +186,7 @@ def seed_sample_data():
                 "Skin rash & hives",
                 "Moderate",
                 "NPRA reported: avoid Aspirin",
-                demo_file,
-                demo_cloud_url,
+                demo_file_image,
             ),
             (
                 "amir_hafiz@gmail.com",
@@ -189,13 +195,12 @@ def seed_sample_data():
                 "Severe / Anaphylaxis",
                 "Patient carries EpiPen",
                 demo_file,
-                demo_cloud_url,
             ),
         ]
         conn.executemany(
             """INSERT INTO allergies 
-               (user_id, allergen_name, reaction_type, severity, notes, doc_path, cloud_doc_url)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (user_id, allergen_name, reaction_type, severity, notes, doc_path)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             [(ids[e], *rest) for e, *rest in rows],
         )
 
