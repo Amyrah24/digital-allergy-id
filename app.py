@@ -781,52 +781,136 @@ if st.session_state.get("flash"):
     st.toast(st.session_state.pop("flash"), icon="✅")
 
 # ---------------------------------------------------------
-# PUBLIC VERIFICATION VIEWER (SCANNED QR & PUBLIC DOC LANDING)
+# PUBLIC VERIFICATION VIEWER (EXECUTED BEFORE LOGIN CHECK)
 # ---------------------------------------------------------
 query_params = st.query_params
 
-# Public Document Handler
+# 1. Public QR Scanner Patient Profile Route
+if "patient" in query_params:
+    patient_param = query_params["patient"]
+    p_email, p_allergies, p_meds = get_user_by_email_or_ic(patient_param)
+
+    st.markdown(
+        brand_header("Public Emergency Verification Viewer"),
+        unsafe_allow_html=True,
+    )
+    st.write("")
+
+    if p_email:
+        st.success(f"✅ Verified Patient Profile: **{p_email}**")
+        
+        # Emergency SOS High Severity Banner
+        severe_items = [a["allergenName"] for a in p_allergies if a["severity"] == "Severe / Anaphylaxis"]
+        if severe_items:
+            st.markdown(
+                f"""<div class="sos">
+                  <h3>🚨 Critical Anaphylaxis Warning</h3>
+                  <p>Patient ID: <b>{e(p_email)}</b></p>
+                  <div style="font-size:1.2rem; font-weight:700;">{e(', '.join(severe_items))}</div>
+                  <p>Do NOT administer these or cross-reactive drug classes.</p>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+
+        st.subheader("Verified Allergy Records & Proofs")
+
+        if not p_allergies:
+            st.info("No active allergy records registered for this patient.")
+        else:
+            for a in p_allergies:
+                cls = SEV_CLASS.get(a["severity"], "mild")
+                st.markdown(
+                    f"""<div class="al-card {cls}">
+                      <div class="al-top"><span class="al-name">{e(a['allergenName'])}</span>
+                      <span class="badge {cls}">{SEV_SHORT.get(a['severity'], a['severity'])}</span></div>
+                      {f'<div class="al-rx">{e(a["reactionType"])}</div>' if a['reactionType'] else ''}
+                      {f'<div class="al-note">{e(a["notes"])}</div>' if a['notes'] else ''}
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+
+                # Public Document Inspector
+                if a["docPath"]:
+                    abs_doc_path = os.path.abspath(a["docPath"])
+                    if os.path.exists(abs_doc_path):
+                        ext = abs_doc_path.split(".")[-1].lower()
+                        with st.expander(f"📄 View Doctor's Verification Proof ({a['allergenName']})"):
+                            if ext in ["png", "jpg", "jpeg"]:
+                                st.image(abs_doc_path, caption=f"Doctor Verification for {a['allergenName']}", use_container_width=True)
+                            elif ext == "pdf":
+                                with open(abs_doc_path, "rb") as f:
+                                    pdf_bytes = f.read()
+                                    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+                                pdf_html = f"""
+                                <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{pdf_b64}" 
+                                        width="100%" height="480px" style="border:none;">
+                                </iframe>
+                                """
+                                components.html(pdf_html, height=490)
+                                st.download_button(
+                                    f"📥 Download {a['allergenName']} PDF Proof",
+                                    data=pdf_bytes,
+                                    file_name=f"Verification_{a['allergenName']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"pub_dl_pdf_{a['id']}"
+                                )
+                            else:
+                                with open(abs_doc_path, "r", errors="ignore") as f:
+                                    st.info(f.read())
+                    else:
+                        st.caption(f"⚠️ Medical proof document file missing on disk (`{a['docPath']}`)")
+
+        # Optional Read-Only Medication History for First Responders
+        if p_meds:
+            st.markdown("---")
+            st.subheader("💊 Discontinued & Historical Prescriptions")
+            p_warnings = analyze_medication_allergy_relationship(p_meds, p_allergies)
+            for w in p_warnings:
+                st.markdown(relationship_html(w), unsafe_allow_html=True)
+            for m in p_meds:
+                st.markdown(med_card_html(m), unsafe_allow_html=True)
+
+    else:
+        st.error(f"❌ Patient profile not found for scanned ID: `{html.escape(patient_param)}`")
+
+    st.divider()
+    if st.button("← Return to Patient Portal Sign In", use_container_width=True):
+        st.query_params.clear()
+        st.rerun()
+
+    # CRITICAL: Stop execution so the rest of app.py (login screen) is never reached!
+    st.stop()
+
+
+# 2. Public Direct Document Route (?file=...)
 if "file" in query_params:
     requested_file = query_params["file"]
     file_path = os.path.join(UPLOAD_DIR, requested_file)
     abs_path = os.path.abspath(file_path)
 
-    st.markdown(
-        brand_header("Public Medical Document Inspector"),
-        unsafe_allow_html=True,
-    )
+    st.markdown(brand_header("Public Medical Document Inspector"), unsafe_allow_html=True)
     st.write("")
 
     if os.path.exists(abs_path):
         ext = abs_path.split(".")[-1].lower()
         if ext in ["png", "jpg", "jpeg"]:
-            st.image(
-                abs_path,
-                caption=f"Verification Document ({requested_file})",
-                use_container_width=True,
-            )
+            st.image(abs_path, caption=f"Verification Document ({requested_file})", use_container_width=True)
         elif ext == "pdf":
             with open(abs_path, "rb") as f:
                 pdf_bytes = f.read()
                 pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-
             pdf_html = f"""
             <iframe src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{pdf_b64}" 
-                    width="100%" height="550px" style="border:none;">
+                    width="100%" height="520px" style="border:none;">
             </iframe>
             """
-            components.html(pdf_html, height=560)
-            st.download_button(
-                "📥 Download Document PDF",
-                data=pdf_bytes,
-                file_name=requested_file,
-                mime="application/pdf",
-            )
+            components.html(pdf_html, height=530)
+            st.download_button("📥 Download Document PDF", data=pdf_bytes, file_name=requested_file, mime="application/pdf")
     else:
-        st.error(f"❌ Requested document (`{requested_file}`) was not found on the server.")
+        st.error(f"❌ Document file (`{requested_file}`) was not found on the server.")
 
     st.divider()
-    if st.button("← Back to Sign In Portal", use_container_width=True):
+    if st.button("← Return to Patient Portal Sign In", use_container_width=True):
         st.query_params.clear()
         st.rerun()
 
